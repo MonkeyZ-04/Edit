@@ -10,7 +10,7 @@ class ExpenseandIncomeTracker:
         # Sidebar for adding expenses
         st.sidebar.header('Add Expense & Income')
         self.date = st.sidebar.date_input('Date', value=datetime.today())
-        self.category = st.sidebar.text_input('Category')
+        self.icon_category = st.sidebar.selectbox('Select Icon', ['💰', '🛒', '🍔', '🚗', '💡'])  # Add more icons as needed
         self.amount = st.sidebar.number_input('Amount', min_value=0.00, step=0.01)
         self.expense_type = st.sidebar.selectbox('Expense Type', ['Expense', 'Income'])
 
@@ -42,7 +42,7 @@ class ExpenseandIncomeTracker:
 
         # Add a delete button
         st.sidebar.header('Delete Data')
-        delete_options = self.expenses['Date'].astype(str) + ' - ' + self.expenses['Category'] + ' (' + self.expenses['Type'] + ')'
+        delete_options = self.expenses['Date'].astype(str) + ' - ' + self.expenses['Icon'] + ' (' + self.expenses['Type'] + ')'
         delete_expense = st.sidebar.selectbox('Select data to delete', options=delete_options, index=0)
 
         if st.sidebar.button('Delete Value'):
@@ -53,23 +53,23 @@ class ExpenseandIncomeTracker:
 
         # Show list of income
         st.subheader('Income List')
-        income_list = self.expenses[self.expenses['Type'] == 'Income'][['Date', 'Category', 'Amount']]
+        income_list = self.expenses[self.expenses['Type'] == 'Income'][['Date', 'Icon', 'Amount']]
         st.table(income_list.style.format({'Amount': "${:.2f}"}))
 
         # Show list of expenses
         st.subheader('Expense List')
-        expense_list = self.expenses[self.expenses['Type'] == 'Expense'][['Date', 'Category', 'Amount']]
+        expense_list = self.expenses[self.expenses['Type'] == 'Expense'][['Date', 'Icon', 'Amount']]
         st.table(expense_list.style.format({'Amount': "${:.2f}"}))
 
     def load_data(self):
         try:
             return pd.read_csv('expenses.csv', parse_dates=['Date'])
         except FileNotFoundError:
-            return pd.DataFrame(columns=['Date', 'Category', 'Amount', 'Type'])
+            return pd.DataFrame(columns=['Date', 'Icon', 'Amount', 'Type'])
 
     def add_expense(self):
         self.expenses = self.load_data()
-        self.expenses = self.expenses.append({'Date': self.date, 'Category': self.category,
+        self.expenses = self.expenses.append({'Date': self.date, 'Icon': self.icon_category,
                                               'Amount': self.amount, 'Type': self.expense_type},
                                              ignore_index=True)
         st.sidebar.success('Value added successfully!')
@@ -78,17 +78,52 @@ class ExpenseandIncomeTracker:
         self.expenses.to_csv('expenses.csv', index=False)
 
     def display_calendar_graph(self, filtered_expenses):
+        # Create calendar graph
         fig_calendar = go.Figure()
         for expense_type, type_data in filtered_expenses.groupby('Type'):
             fig_calendar.add_trace(go.Bar(x=type_data['Date'], y=type_data['Amount'],
-                                         name=expense_type, marker_color='green' if expense_type == 'Income' else 'red'))
-        st.plotly_chart(fig_calendar)
+                                          name=expense_type,
+                                          marker_color='green' if expense_type == 'Income' else 'red'))
+
+        # Display the calendar graph
+        chart = st.plotly_chart(fig_calendar, use_container_width=True)
+
+        # Add input boxes below the graph
+        st.subheader('Filter by Date Range')
+        start_date = st.date_input("Start Date", min_value=filtered_expenses['Date'].min(),
+                                   max_value=filtered_expenses['Date'].max(), value=filtered_expenses['Date'].min(),
+                                   format="YYYY-MM-DD")
+        end_date = st.date_input("End Date", min_value=filtered_expenses['Date'].min(),
+                                 max_value=filtered_expenses['Date'].max(), value=filtered_expenses['Date'].max(),
+                                 format="YYYY-MM-DD")
+
+        if start_date > end_date:
+            st.error("Start date should be less than or equal to end date.")
+        else:
+            # Convert date objects to datetime64[ns]
+            start_date = pd.to_datetime(start_date)
+            end_date = pd.to_datetime(end_date)
+
+            # Filter data based on selected date range
+            filtered_expenses = self.expenses[
+                (self.expenses['Date'] >= start_date) & (self.expenses['Date'] <= end_date)]
+
+            # Update the existing graph
+            fig_calendar.data = []  # Clear existing data
+            for expense_type, type_data in filtered_expenses.groupby('Type'):
+                fig_calendar.add_trace(go.Bar(x=type_data['Date'], y=type_data['Amount'],
+                                              name=expense_type,
+                                              marker_color='green' if expense_type == 'Income' else 'red'))
+
+            # Update the displayed chart with the modified figure
+            chart.plotly_chart(fig_calendar, use_container_width=True)
 
     def display_bar_graph(self, filtered_expenses, graph_type, color):
         fig = go.Figure()
-        for category, category_data in filtered_expenses[filtered_expenses['Type'] == graph_type].groupby('Category'):
-            fig.add_trace(go.Bar(x=category_data['Date'], y=category_data['Amount'],
-                                 name=category, marker_color=color))
+        for icon, icon_data in filtered_expenses[filtered_expenses['Type'] == graph_type].groupby('Icon'):
+            fig.add_trace(go.Bar(x=icon_data['Date'], y=icon_data['Amount'],
+                                 name=icon, marker_color=color))
+
         st.plotly_chart(fig)
 
     def delete_expense(self, selected_expense):
@@ -96,12 +131,12 @@ class ExpenseandIncomeTracker:
 
         # Extracting information from selected_expense string
         date_str, rest = selected_expense.split(' - ')
-        category, expense_type = rest.split(' (')[0], rest.split(' (')[1].split(')')[0]
+        icon, expense_type = rest.split(' (')[0], rest.split(' (')[1].split(')')[0]
 
         # Finding index of the expense to delete
         delete_index = self.expenses[
             (self.expenses['Date'].astype(str) == date_str) &
-            (self.expenses['Category'] == category) &
+            (self.expenses['Icon'] == icon) &
             (self.expenses['Type'] == expense_type)
         ].index
 
