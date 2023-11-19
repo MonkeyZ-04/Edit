@@ -4,93 +4,319 @@ import plotly.graph_objects as go
 from datetime import datetime
 
 
-# Create or load the expenses DataFrame
-def load_data():
-    try:
-        return pd.read_csv('expenses.csv', parse_dates=['Date'])
-    except FileNotFoundError:
-        return pd.DataFrame(columns=['Date', 'Category', 'Amount', 'Type'])
+class Data:
+    def __init__(self, csv_file_path):
+        self.csv_file_path = csv_file_path
+        try:
+            self.df = pd.read_csv(csv_file_path)
+
+            # Convert 'Date' column to datetime.date
+            self.df['Date'] = pd.to_datetime(self.df['Date']).dt.date
+
+        except FileNotFoundError:
+            self.df = pd.DataFrame(columns=['Date', 'Type', 'Category', 'Amount'])
+
+    def save_to_csv(self):
+        self.df.to_csv(self.csv_file_path, index=False)
+
+    def add_data(self, date_val, type_val, category_val, amount_val):
+        new_entry = {'Date': date_val, 'Type': type_val, 'Category': category_val, 'Amount': amount_val}
+        self.df = self.df.append(new_entry, ignore_index=True)
+
+    def delete_data(self, selected_index):
+        self.df = self.df.drop(selected_index)
 
 
-expenses = load_data()
+class Display:
+    def show_data(self, df):
+        st.write('### Transaction')
+        sort_options = ['No Sorting', 'Date', 'Amount']
+        sort_selected = st.selectbox('Sort Options', sort_options, index=0)
+        sort_order_options = ['Ascending', 'Descending']
+        sort_order = st.selectbox('Sort Order', sort_order_options, index=0)
+        ascending = (sort_order == 'Ascending')
+        if sort_selected == 'Date':
+            df.sort_values(by='Date', inplace=True, ascending=ascending)
+        elif sort_selected == 'Amount':
+            df.sort_values(by='Amount', inplace=True, ascending=ascending)
 
-# Sidebar for adding expenses
-st.sidebar.header('Add Expense & Income')
-date = st.sidebar.date_input('Date', value=datetime.today())
-category = st.sidebar.text_input('Category')
-amount = st.sidebar.number_input('Amount', min_value=0.01, step=0.01)
-expense_type = st.sidebar.selectbox('Expense Type', ['Expense', 'Income'])
+        page_df = df.copy()
+        page_df.index = range(1, len(page_df) + 1)
+        page_df = page_df.rename_axis('Index')
+        page_df['Amount'] = page_df['Amount'].apply(lambda x: '{:.2f}'.format(x))
+        st.dataframe(page_df, width=800)
 
-if st.sidebar.button('Add Value'):
-    expenses = load_data()
-    expenses = expenses.append({'Date': date, 'Category': category, 'Amount': amount, 'Type': expense_type},
-                               ignore_index=True)
-    st.sidebar.success('Value added successfully!')
+    def plot_bar_chart_comparison(self, df, x_col, y_col, title, start_date, end_date):
+        df_income = df[df['Type'] == 'Income'].groupby(x_col)[y_col].sum().reset_index()
+        df_expense = df[df['Type'] == 'Expense'].groupby(x_col)[y_col].sum().reset_index()
+        df_total = pd.merge(df_income, df_expense, on=x_col, how='outer', suffixes=('_Income', '_Expense')).fillna(0)
 
-    # Save data to CSV file
-    expenses.to_csv('expenses.csv', index=False)
+        df_filtered = df_total[(df_total[x_col] >= start_date) & (df_total[x_col] <= end_date)]
+        df_filtered = df_filtered.sort_values(by=[x_col])
+        min_date = df_filtered[x_col].min()
+        df_filtered = df_filtered[df_filtered[x_col] >= min_date]
 
-# Convert 'Date' column to datetime format
-expenses['Date'] = pd.to_datetime(expenses['Date'])
+        fig = go.Figure()
+        fig.add_trace(
+            go.Bar(x=df_filtered[x_col], y=df_filtered[y_col + '_Income'], name='Total Income', marker_color='green'))
+        fig.add_trace(
+            go.Bar(x=df_filtered[x_col], y=df_filtered[y_col + '_Expense'], name='Total Expense', marker_color='red'))
 
-# Display the expenses with icons
-st.header('Expense & Income Tracker')
+        fig.update_layout(
+            title=title,
+            xaxis=dict(title=x_col),
+            yaxis=dict(title='Total Amount'),
+        )
 
-# Display the DataFrame
-st.table(expenses.style.format({'Amount': "฿{:.2f}"}))
+        st.plotly_chart(fig)
 
-# Display total income and expenses for the month
-current_month = datetime.now().month
-filtered_expenses = expenses[(expenses['Date'].dt.month == current_month)]
+    def plot_line_chart_comparison(self, df, x_col, y_col, title, start_date, end_date):
+        df_income = df[df['Type'] == 'Income'].groupby(x_col)[y_col].sum().reset_index()
+        df_expense = df[df['Type'] == 'Expense'].groupby(x_col)[y_col].sum().reset_index()
+        df_total = pd.merge(df_income, df_expense, on=x_col, how='outer', suffixes=('_Income', '_Expense')).fillna(0)
+        df_total['Total'] = df_total[y_col + '_Income'] - df_total[y_col + '_Expense']
+
+        df_filtered = df_total[(df_total[x_col] >= start_date) & (df_total[x_col] <= end_date)]
+        df_filtered = df_filtered.sort_values(by=[x_col])
+        min_date = df_filtered[x_col].min()
+        df_filtered = df_filtered[df_filtered[x_col] >= min_date]
+
+        fig = go.Figure()
+
+        fig.add_trace(go.Scatter(x=df_filtered[x_col], y=df_filtered[y_col + '_Income'], mode='lines', name='Income',
+                                 line=dict(color='green')))
+        fig.add_trace(go.Scatter(x=df_filtered[x_col], y=df_filtered[y_col + '_Expense'], mode='lines', name='Expense',
+                                 line=dict(color='red')))
+        fig.add_trace(
+            go.Scatter(x=df_filtered[x_col], y=df_filtered['Total'], mode='lines', name='net', line=dict(color='blue')))
+
+        fig.update_layout(
+            title=title,
+            xaxis=dict(title=x_col),
+            yaxis=dict(title='Total Amount'),
+        )
+
+        st.plotly_chart(fig)
+
+    def plot_pie_chart_comparison(self, df, x_col, y_col, title, start_date, end_date):
+        df_filtered = df[(df[x_col] >= start_date) & (df[x_col] <= end_date)]
+        df_grouped = df_filtered.groupby('Type')[y_col].sum().reset_index()
+
+        fig = go.Figure()
+        fig.add_trace(go.Pie(labels=df_grouped['Type'], values=df_grouped[y_col], marker=dict(colors=['red', 'green'])))
+        fig.update_layout(
+            title=title,
+            showlegend=True,
+        )
+
+        st.plotly_chart(fig)
+
+    def plot_waterfall_chart_comparison(self, df, x_col, y_col, title, start_date, end_date):
+        df_income = df[df['Type'] == 'Income'].groupby(x_col)[y_col].sum().reset_index()
+        df_expense = df[df['Type'] == 'Expense'].groupby(x_col)[y_col].sum().reset_index()
+        df_total = pd.merge(df_income, df_expense, on=x_col, how='outer', suffixes=('_Income', '_Expense')).fillna(0)
+        df_total['Total'] = df_total[y_col + '_Income'] - df_total[y_col + '_Expense']
+
+        df_filtered = df_total[(df_total[x_col] >= start_date) & (df_total[x_col] <= end_date)]
+        df_filtered = df_filtered.sort_values(by=[x_col])
+        min_date = df_filtered[x_col].min()
+        df_filtered = df_filtered[df_filtered[x_col] >= min_date]
+
+        fig = go.Figure(go.Waterfall(
+            name="Total",
+            orientation="v",
+            measure=["relative"] * len(df_filtered),
+            x=df_filtered[x_col],
+            textposition="outside",
+            text=df_filtered['Total'],
+            y=df_filtered['Total'],
+            connector={"line": {"color": "rgb(63, 63, 63)"}},
+        ))
+
+        fig.update_layout(
+            title=title,
+            xaxis=dict(title=x_col),
+            yaxis=dict(title='Amount'),
+            showlegend=True,
+        )
+
+        st.plotly_chart(fig)
+
+    def plot_stacked_bar_chart_income(self, df, x_col, y_col, title, start_date, end_date):
+        df_filtered = df[(df[x_col] >= start_date) & (df[x_col] <= end_date) & (df['Type'] == 'Income')]
+        fig = go.Figure()
+        categories = df_filtered['Category'].unique()
+        for category in categories:
+            category_df = df_filtered[df_filtered['Category'] == category]
+            fig.add_trace(go.Bar(x=category_df[x_col], y=category_df[y_col], name=category))
+
+        fig.update_layout(
+            title=title,
+            xaxis=dict(title=x_col),
+            yaxis=dict(title='Total Amount'),
+            barmode='stack',
+        )
+
+        st.plotly_chart(fig)
+
+    def plot_pie_chart_income(self, df, x_col, y_col, title, start_date, end_date):
+        df_filtered = df[(df[x_col] >= start_date) & (df[x_col] <= end_date) & (df['Type'] == 'Income')]
+        categories = df_filtered['Category'].unique()
+        total_amounts = df_filtered.groupby('Category')[y_col].sum()
+
+        fig = go.Figure(data=[go.Pie(labels=total_amounts.index, values=total_amounts.values)])
+        fig.update_layout(
+            title=title,
+            showlegend=True,
+        )
+
+        st.plotly_chart(fig)
+
+    def plot_stacked_bar_chart_expense(self, df, x_col, y_col, title, start_date, end_date):
+        df_filtered = df[(df[x_col] >= start_date) & (df[x_col] <= end_date) & (df['Type'] == 'Expense')]
+        fig = go.Figure()
+        categories = df_filtered['Category'].unique()
+        for category in categories:
+            category_df = df_filtered[df_filtered['Category'] == category]
+            fig.add_trace(go.Bar(x=category_df[x_col], y=category_df[y_col], name=category))
+
+        fig.update_layout(
+            title=title,
+            xaxis=dict(title=x_col),
+            yaxis=dict(title='Total Amount'),
+            barmode='stack',
+        )
+
+        st.plotly_chart(fig)
+
+    def plot_pie_chart_expense(self, df, x_col, y_col, title, start_date, end_date):
+        df_filtered = df[(df[x_col] >= start_date) & (df[x_col] <= end_date) & (df['Type'] == 'Expense')]
+        categories = df_filtered['Category'].unique()
+        total_amounts = df_filtered.groupby('Category')[y_col].sum()
+
+        fig = go.Figure(data=[go.Pie(labels=total_amounts.index, values=total_amounts.values)])
+        fig.update_layout(
+            title=title,
+            showlegend=True,
+        )
+
+        st.plotly_chart(fig)
 
 
-# Display separate graphs for income and expenses with only bars
-st.subheader('Income and Expense Calendar')
-fig_calendar = go.Figure()
-for expense_type, type_data in filtered_expenses.groupby('Type'):
-    fig_calendar.add_trace(go.Bar(x=type_data['Date'], y=type_data['Amount'], name=expense_type, marker_color='green' if expense_type == 'Income' else 'red'))
-st.plotly_chart(fig_calendar)
+class App:
+    def __init__(self, data, display):
+        self.data = data
+        self.display = display
+        self.income_category_list = self.get_category_list('Income')
+        self.expense_category_list = self.get_category_list('Expense')
 
-st.plotly_chart(fig_calendar)
-st.subheader('Income Graph')
-fig_income = go.Figure()
-for category, category_data in filtered_expenses[filtered_expenses['Type'] == 'Income'].groupby('Category'):
-    fig_income.add_trace(go.Scatter(x=category_data['Date'], y=category_data['Amount'],
-                                    mode='lines+markers', name=category, marker=dict(color='green')))
-st.plotly_chart(fig_income)
+    def get_category_list(self, transaction_type):
+        return self.data.df[self.data.df['Type'] == transaction_type]['Category'].unique()
 
-st.subheader('Expense Graph')
-fig_expense = go.Figure()
-for category, category_data in filtered_expenses[filtered_expenses['Type'] == 'Expense'].groupby('Category'):
-    fig_expense.add_trace(go.Scatter(x=category_data['Date'], y=category_data['Amount'],
-                                     mode='lines+markers', name=category, marker=dict(color='red')))
-st.plotly_chart(fig_expense)
+    def add_data(self):
+        st.title('Add New Transaction')
+        date_val = st.date_input('Date', value=pd.to_datetime('today').date())
+        type_val = st.selectbox('Type', ['Income', 'Expense'])
 
-# Display calendar with income and expenses graph
+        if type_val == 'Income':
+            category_val = st.selectbox('Category', self.income_category_list)
+        else:
+            category_val = st.selectbox('Category', self.expense_category_list)
+
+        new_category = st.text_input('New Category').strip().capitalize()
+        if new_category:
+            category_val = new_category
+
+        amount_val = st.number_input('Amount', value=0.0, format="%.2f")
+
+        if st.button('Add transaction'):
+            self.data.add_data(date_val, type_val, category_val, amount_val)
+            self.income_category_list = self.get_category_list('Income')
+            self.expense_category_list = self.get_category_list('Expense')
+            st.success('Transaction added successfully.')
+
+    def delete_data(self):
+        selected_index = st.sidebar.number_input('Enter the index to delete', min_value=1, value=1, step=1, key='edit')
+
+        if st.sidebar.button('Delete transaction'):
+            self.data.delete_data(selected_index - 1)
+            st.sidebar.success('Transaction deleted.')
+
+    def analyze_data(self):
+        st.title('Data Analysis')
+
+        # Filter out NaT values in 'Date' column
+        valid_dates = self.data.df['Date'].dropna()
+
+        if valid_dates.empty:
+            st.warning("No valid dates found. Please review your data.")
+            return
+
+        min_date = pd.to_datetime(valid_dates.min()).date()
+        max_date = pd.to_datetime(valid_dates.max()).date()
+
+        start_date = st.sidebar.date_input("Start Date",
+                                           min_value=pd.to_datetime(self.data.df['Date'].min(), errors='coerce'))
+        end_date = st.sidebar.date_input("End Date",
+                                         max_value=pd.to_datetime(self.data.df['Date'].max(), errors='coerce'),
+                                         value=pd.to_datetime('today'))
+
+        filtered_df = self.data.df[
+            (self.data.df['Date'].notna()) & (self.data.df['Date'] >= start_date) & (self.data.df['Date'] <= end_date)]
+
+        transaction_type = st.sidebar.selectbox('Choose Transaction Type', ['Income vs Expense', 'Income', 'Expense'])
+        graph_types_income_expense = ['Bar Chart', 'Line Chart', 'Pie Chart', 'Waterfall Chart']
+        graph_types_income = ['Stacked Chart', 'Pie Chart']
+        graph_types_expense = ['Stacked Chart', 'Pie Chart']
+
+        if transaction_type == 'Income vs Expense':
+            graph_type = st.sidebar.selectbox('Choose Graph Type', graph_types_income_expense)
+            if graph_type == 'Bar Chart':
+                self.display.plot_bar_chart_comparison(filtered_df, 'Date', 'Amount', 'Income vs Expense', start_date,
+                                                       end_date)
+            elif graph_type == 'Line Chart':
+                self.display.plot_line_chart_comparison(filtered_df, 'Date', 'Amount', 'Income vs Expense', start_date,
+                                                        end_date)
+            elif graph_type == 'Pie Chart':
+                self.display.plot_pie_chart_comparison(filtered_df, 'Date', 'Amount', 'Income vs Expense', start_date,
+                                                       end_date)
+            elif graph_type == 'Waterfall Chart':
+                self.display.plot_waterfall_chart_comparison(filtered_df, 'Date', 'Amount', 'Income vs Expense',
+                                                             start_date, end_date)
+
+        elif transaction_type == 'Income':
+            graph_type = st.sidebar.selectbox('Choose Graph Type', graph_types_income)
+            if graph_type == 'Stacked Chart':
+                self.display.plot_stacked_bar_chart_income(filtered_df, 'Date', 'Amount', 'Income Categories',
+                                                           start_date, end_date)
+            elif graph_type == 'Pie Chart':
+                self.display.plot_pie_chart_income(filtered_df, 'Date', 'Amount', 'Income Categories', start_date,
+                                                   end_date)
+
+        elif transaction_type == 'Expense':
+            graph_type = st.sidebar.selectbox('Choose Graph Type', graph_types_expense)
+            if graph_type == 'Stacked Chart':
+                self.display.plot_stacked_bar_chart_expense(filtered_df, 'Date', 'Amount', 'Expense Categories',
+                                                            start_date, end_date)
+            elif graph_type == 'Pie Chart':
+                self.display.plot_pie_chart_expense(filtered_df, 'Date', 'Amount', 'Expense Categories', start_date,
+                                                    end_date)
+
+    def run(self):
+        st.sidebar.image('img.png', width=250)
+        option = st.sidebar.radio("Select Operation", ("Add Transaction", "View Transaction", "Analyse"))
+
+        if option == "Add Transaction":
+            self.add_data()
+        elif option == "View Transaction":
+            self.display.show_data(self.data.df)
+            self.delete_data()
+        elif option == "Analyse":
+            self.analyze_data()
+
+        self.data.save_to_csv()
 
 
-# Add a delete button
-st.sidebar.header('Delete Expense')
-max_value = len(expenses) - 1 if len(expenses) > 0 else 0
-delete_index = st.sidebar.number_input('Enter index to delete', min_value=0, max_value=max_value, value=0, step=1)
-
-if st.sidebar.button('Delete Value'):
-    expenses = load_data()
-    expenses = expenses.drop(index=delete_index)
-    st.sidebar.success('Value deleted successfully!')
-
-    # Save updated data to CSV file
-    expenses.to_csv('expenses.csv', index=False)
-
-# New page to show lists of income and expenses
-st.title('Income and Expense Lists')
-
-# Show list of income
-st.subheader('Income List')
-income_list = expenses[expenses['Type'] == 'Income'][['Date', 'Category', 'Amount']]
-st.table(income_list.style.format({'Amount': "${:.2f}"}))
-
-# Show list of expenses
-st.subheader('Expense List')
-expense_list = expenses[expenses['Type'] == 'Expense'][['Date', 'Category', 'Amount']]
-st.table(expense_list.style.format({'Amount': "${:.2f}"}))
+if __name__ == "__main__":
+    csv_file_path = 'your_data.csv'
+    App(Data(csv_file_path), Display()).run()
