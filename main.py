@@ -21,8 +21,7 @@ class Data:
 
     def add_data(self, date_val, type_val, category_val, amount_val):
         new_entry = {'Date': date_val, 'Type': type_val, 'Category': category_val, 'Amount': amount_val}
-        self.df = self.df.append(new_entry, ignore_index=True)
-
+        self.df = pd.concat([self.df, pd.DataFrame([new_entry])], ignore_index=True)
     def delete_data(self, selected_index):
         self.df = self.df.drop(selected_index)
 
@@ -219,13 +218,16 @@ class App:
         type_val = st.selectbox('Type', ['Income', 'Expense'])
 
         if type_val == 'Income':
-            category_val = st.selectbox('Category', self.income_category_list)
+            category_list = list(self.income_category_list) + ['Create New Category']
         else:
-            category_val = st.selectbox('Category', self.expense_category_list)
+            category_list = list(self.expense_category_list) + ['Create New Category']
 
-        new_category = st.text_input('New Category').strip().capitalize()
-        if new_category:
-            category_val = new_category
+        category_val = st.selectbox('Category', category_list)
+
+        if category_val == 'Create New Category':
+            new_category = st.text_input('New Category').strip().capitalize()
+            if new_category:
+                category_val = new_category
 
         amount_val = st.number_input('Amount', value=0.0, format="%.2f")
 
@@ -236,12 +238,14 @@ class App:
             st.success('Transaction added successfully.')
 
     def delete_data(self):
-        selected_index = st.sidebar.number_input('Enter the index to delete', min_value=1, value=1, step=1, key='edit')
+        st.sidebar.write('### Delete Transaction')
+        valid_indices = range(1, len(self.data.df) + 1)
+        selected_index = st.sidebar.number_input('Enter the index to delete', min_value=valid_indices[0],
+                                                 max_value=valid_indices[-1], value=valid_indices[0], step=1, key='delete')
 
         if st.sidebar.button('Delete transaction'):
             self.data.delete_data(selected_index - 1)
             st.sidebar.success('Transaction deleted.')
-
     def analyze_data(self):
         st.title('Data Analysis')
 
@@ -252,8 +256,6 @@ class App:
             st.warning("No valid dates found. Please review your data.")
             return
 
-        min_date = pd.to_datetime(valid_dates.min()).date()
-        max_date = pd.to_datetime(valid_dates.max()).date()
 
         start_date = st.sidebar.date_input("Start Date",
                                            min_value=pd.to_datetime(self.data.df['Date'].min(), errors='coerce'))
