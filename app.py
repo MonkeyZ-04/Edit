@@ -1,9 +1,9 @@
 # app.py
-from datetime import datetime
 import pandas as pd
 from data_manager import Data
 from display_manager import Display
 import streamlit as st
+
 
 class App:
     def __init__(self, data, display):
@@ -69,50 +69,44 @@ class App:
                                          value=pd.to_datetime(self.data.df['Date'].max(), errors='coerce'))
 
         filtered_df = self.data.df[
-            (self.data.df['Date'].notna()) & (self.data.df['Date'] >= start_date) & (
-                        self.data.df['Date'] <= end_date)]
+            (self.data.df['Date'].notna()) & (self.data.df['Date'] >= start_date) & (self.data.df['Date'] <= end_date)]
 
-        transaction_type = st.sidebar.selectbox('Choose Transaction Type',
-                                                ['Income vs Expense', 'Income', 'Expense'])
-        graph_types_income_expense = ['Bar Chart', 'Line Chart', 'Pie Chart', 'Waterfall Chart']
+        transaction_type = st.sidebar.selectbox('Choose Transaction Type', ['Income vs Expense', 'Income', 'Expense'])
+        graph_types_income_expense = ['Bar Chart', 'Line Chart', 'Waterfall Chart']
         graph_types_income = ['Stacked Chart', 'Pie Chart']
         graph_types_expense = ['Stacked Chart', 'Pie Chart']
 
         if transaction_type == 'Income vs Expense':
             graph_type = st.sidebar.selectbox('Choose Graph Type', graph_types_income_expense)
+            time_granularity_options = ['Daily', 'Weekly', 'Monthly', 'Yearly']
+            time_granularity = st.sidebar.selectbox('Choose Time Granularity', time_granularity_options)
             if graph_type == 'Bar Chart':
-                self.display.plot_bar_chart_comparison(filtered_df, 'Date', 'Amount', 'Income vs Expense',
-                                                       start_date,
-                                                       end_date)
+                self.display.plot_bar(filtered_df, 'Date', 'Amount', 'Income vs Expense', start_date, end_date,
+                                      time_granularity)
             elif graph_type == 'Line Chart':
-                self.display.plot_line_chart_comparison(filtered_df, 'Date', 'Amount', 'Income vs Expense',
-                                                        start_date,
-                                                        end_date)
-            elif graph_type == 'Pie Chart':
-                self.display.plot_pie_chart_comparison(filtered_df, 'Date', 'Amount', 'Income vs Expense',
-                                                       start_date,
-                                                       end_date)
+                self.display.plot_line(filtered_df, 'Date', 'Amount', 'Income vs Expense', start_date, end_date,
+                                       time_granularity)
             elif graph_type == 'Waterfall Chart':
-                self.display.plot_waterfall_chart_comparison(filtered_df, 'Date', 'Amount', 'Income vs Expense',
-                                                             start_date, end_date)
+                self.display.plot_waterfall(filtered_df, 'Date', 'Amount', 'Income vs Expense', start_date, end_date,
+                                            time_granularity)
 
         elif transaction_type == 'Income':
             graph_type = st.sidebar.selectbox('Choose Graph Type', graph_types_income)
             if graph_type == 'Stacked Chart':
-                self.display.plot_stacked_bar_chart_income(filtered_df, 'Date', 'Amount', 'Income Categories',
-                                                           start_date, end_date)
+                self.display.plot_stacked(filtered_df, 'Date', 'Amount', 'Income Chart', start_date, end_date, 'Type',
+                                          'Income')
             elif graph_type == 'Pie Chart':
-                self.display.plot_pie_chart_income(filtered_df, 'Date', 'Amount', 'Income Categories', start_date,
-                                                   end_date)
+                self.display.plot_pie(filtered_df, 'Date', 'Amount', 'Expense Chart', start_date, end_date, 'Type',
+                                      'Income')
 
         elif transaction_type == 'Expense':
             graph_type = st.sidebar.selectbox('Choose Graph Type', graph_types_expense)
             if graph_type == 'Stacked Chart':
-                self.display.plot_stacked_bar_chart_expense(filtered_df, 'Date', 'Amount', 'Expense Categories',
-                                                            start_date, end_date)
+                self.display.plot_stacked(filtered_df, 'Date', 'Amount', 'Income Chart', start_date, end_date, 'Type',
+                                          'Expense')
             elif graph_type == 'Pie Chart':
-                self.display.plot_pie_chart_expense(filtered_df, 'Date', 'Amount', 'Expense Categories', start_date,
-                                                    end_date)
+                self.display.plot_pie(filtered_df, 'Date', 'Amount', 'Expense Chart', start_date, end_date, 'Type',
+                                      'Expense')
 
     def run(self):
         st.sidebar.image('img.png', width=250)
@@ -127,6 +121,7 @@ class App:
             self.analyze_data()
 
         self.data.save_to_csv()
+
 
 if __name__ == "__main__":
     csv_file_path = 'your_data.csv'
